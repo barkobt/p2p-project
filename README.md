@@ -24,14 +24,14 @@ Telekom müşterilerinin hizmeti bırakıp bırakmayacağını tahmin eden uçta
 Bu proje, bir telekom şirketinin müşteri verilerini kullanarak hangi müşterilerin hizmeti bırakabileceğini (churn) tahmin eder. Sistem üç ana katmandan oluşur:
 
 - **Veri Katmanı:** Ham CSV → temizleme → eğitim/test bölme
-- **Model Katmanı:** 4 farklı algoritmanın eğitimi ve otomatik en iyi model seçimi
+- **Model Katmanı:** Linear model ailesi ile CV + Optuna tuning ve otomatik en iyi model seçimi
 - **Servis Katmanı:** FastAPI tabanlı REST API, `/predict` endpoint'i üzerinden gerçek zamanlı tahmin
 
 ### Teknik Stack
 
 | Katman | Teknoloji |
 |--------|-----------|
-| ML Pipeline | scikit-learn, XGBoost, LightGBM |
+| ML Pipeline | scikit-learn, imbalanced-learn, Optuna |
 | API | FastAPI + Uvicorn |
 | Veri İşleme | pandas, numpy |
 | Serileştirme | joblib |
@@ -84,11 +84,23 @@ Adımlar sırasıyla çalıştırılmalıdır; her adım bir sonrakinin girişin
 python -m src.preprocess
 
 # Adım 2 — Model eğitimi ve karşılaştırma
-# Çıktı: models/best_model.pkl, reports/figures/*.png
+# Çıktı:
+#   models/best_model.pkl
+#   models/model_metadata.json
+#   models/model_comparison.csv
+#   reports/figures/*.png
 python -m src.train
 
 # Adım 3 — API servisi
 uvicorn api.main:app --reload --port 8000
+```
+
+Tek komutla local pipeline:
+
+```bash
+python -m src.pipeline
+# veya
+bash scripts/run_local_pipeline.sh
 ```
 
 ### Keşifsel Veri Analizi (EDA)
@@ -98,6 +110,16 @@ jupyter notebook notebooks/01_eda.ipynb
 ```
 
 EDA notebook'u churn dağılımı, sayısal değişken histogramları, kategorik değişkenler bazında churn oranları ve korelasyon matrisini otomatik olarak `reports/figures/` klasörüne kaydeder.
+
+### Drift Kontrolü (PSI)
+
+Prediction logları oluştuktan sonra:
+
+```bash
+python -m src.drift
+```
+
+Çıktı `reports/drift/` klasörüne JSON raporu olarak yazılır.
 
 ---
 
@@ -111,6 +133,7 @@ API başlatıldıktan sonra interactive dokümantasyon için: **http://localhost
 |--------|----------|----------|
 | `GET` | `/health` | Servis sağlığı ve model yüklü olup olmadığını döner |
 | `POST` | `/api/v1/predict` | Müşteri bilgilerini alır, churn olasılığı döner |
+| `POST` | `/api/v1/predict/batch` | Tek istekte en fazla 500 müşteri için tahmin döner |
 
 ### POST `/api/v1/predict`
 
@@ -146,9 +169,11 @@ API başlatıldıktan sonra interactive dokümantasyon için: **http://localhost
 {
   "churn_probability": 0.7342,
   "churn_prediction": true,
-  "threshold_used": 0.5
+  "threshold_used": 0.42
 }
 ```
+
+`threshold_used`, eğitim sırasında validation üzerinde optimize edilip `models/model_metadata.json` içine yazılan değerdir.
 
 **Alan Açıklamaları:**
 
@@ -189,16 +214,13 @@ EOF
 
 ## Model Karşılaştırması
 
-`python -m src.train` komutu 4 modeli eğitir ve ROC-AUC'a göre sıralar. Sonuçlar eğitim sonrasında güncellenecektir.
+`python -m src.train` akışı:
 
-| Model | Accuracy | F1 | Precision | Recall | ROC-AUC |
-|-------|----------|----|-----------|--------|---------|
-| LightGBM | — | — | — | — | — |
-| XGBoost | — | — | — | — | — |
-| RandomForest | — | — | — | — | — |
-| LogisticRegression | — | — | — | — | — |
-
-> Eğitim tamamlandıktan sonra `python -m src.train` terminal çıktısından doldurulacak.
+- Stratified 5-fold CV ile model/strateji karşılaştırması yapar
+- Linear family adayları için `baseline`, `class_weight`, `smote` stratejilerini dener
+- İlk 2 adayı Optuna ile (`60 trial`) tune eder
+- Out-of-fold olasılıklardan en iyi F1 threshold'unu seçer
+- Sonuçları `models/model_comparison.csv` dosyasına yazar
 
 Confusion matrix ve ROC eğrisi grafikleri otomatik olarak `reports/figures/` klasörüne kaydedilir.
 
@@ -210,7 +232,7 @@ Modeller eğitildikten sonra Docker ile çalıştırılabilir. `models/` klasör
 
 ```bash
 # Önce modelleri eğit
-python -m src.preprocess && python -m src.train
+python -m src.pipeline
 
 # Image oluştur ve başlat
 docker compose up --build
@@ -226,13 +248,13 @@ Servis `http://localhost:8000` adresinde erişilebilir olur.
 ## Testler
 
 ```bash
-# Tüm testler (test_api.py için eğitilmiş model gerekir)
+# Tüm testler
 pytest tests/ -v
 
-# Model gerektirmeden çalışan testler
-pytest tests/test_preprocess.py tests/test_train.py -v
+# Unit testler
+pytest tests/test_preprocess.py tests/test_train.py tests/test_drift.py -v
 
-# Tek test dosyası
+# API smoke testleri
 pytest tests/test_api.py -v
 ```
 
@@ -252,20 +274,26 @@ p2p-project/
 │
 ├── src/
 │   ├── utils.py                ← Path sabitleri (ROOT_DIR, DATA_DIR, MODEL_DIR), logger
+│   ├── features.py             ← Ortak feature engineering dönüşümleri
 │   ├── preprocess.py           ← ColumnTransformer pipeline + veri bölme
-│   ├── train.py                ← 4 model eğitimi, karşılaştırma, en iyi modeli kaydet
+│   ├── train.py                ← CV + dengesizlik stratejileri + Optuna + artefakt üretimi
+│   ├── pipeline.py             ← Tek komutluk preprocess + train akışı
+│   ├── drift.py                ← Prediction logları üzerinden PSI drift raporu
 │   └── evaluate.py             ← compute_metrics, plot_roc, plot_confusion_matrix
 │
 ├── api/
 │   ├── main.py                 ← FastAPI app + lifespan (model yükleme)
-│   ├── schemas.py              ← CustomerFeatures (Pydantic), PredictionResponse
+│   ├── schemas.py              ← CustomerFeatures + batch request/response şemaları
 │   └── routes/
-│       ├── predict.py          ← POST /api/v1/predict
+│       ├── predict.py          ← /predict ve /predict/batch + JSONL prediction logging
 │       └── health.py           ← GET /health
 │
-├── models/                     ← best_model.pkl, preprocessor.pkl (gitignore'd)
+├── models/                     ← best_model.pkl, preprocessor.pkl, model_metadata.json, model_comparison.csv
 ├── tests/                      ← pytest testleri
 ├── reports/figures/            ← Otomatik kaydedilen grafikler
+├── reports/drift/              ← Drift raporları
+├── logs/predictions/           ← Günlük JSONL prediction logları
+├── mlruns/                     ← MLflow local file store
 │
 ├── requirements.txt
 ├── Dockerfile
@@ -279,11 +307,11 @@ p2p-project/
 
 Projenin ilerleyen versiyonlarında planlanıyor:
 
-- [ ] **SMOTE / sınıf ağırlığı** — sınıf dengesizliği için gelişmiş yöntemler
-- [ ] **Hiperparametre optimizasyonu** — Optuna ile otomatik tuning
+- [x] **SMOTE / sınıf ağırlığı** — sınıf dengesizliği için karşılaştırmalı strateji
+- [x] **Hiperparametre optimizasyonu** — Optuna ile otomatik tuning
 - [ ] **Feature importance görselleştirme** — SHAP değerleri ile model yorumlanabilirliği
-- [ ] **Batch predict endpoint** — tek seferde çok sayıda müşteri tahmini (`POST /api/v1/predict/batch`)
-- [ ] **Model versiyonlama** — MLflow ile deney takibi
+- [x] **Batch predict endpoint** — tek seferde çok sayıda müşteri tahmini (`POST /api/v1/predict/batch`)
+- [x] **Model versiyonlama** — MLflow local store ile deney takibi
 - [ ] **Streamlit arayüzü** — sürükle-bırak CSV yükleme ve tahmin dashboard'u
-- [ ] **CI/CD** — GitHub Actions ile otomatik test ve Docker image build
-- [ ] **Monitoring** — tahmin logları ve model drift tespiti
+- [x] **CI/CD** — GitHub Actions ile lint + unit + API smoke test
+- [x] **Monitoring** — prediction logları ve PSI tabanlı drift raporu

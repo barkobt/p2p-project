@@ -13,20 +13,24 @@ from sklearn.metrics import (
 from src.utils import REPORT_DIR
 
 
-def compute_metrics(model, X_test, y_test) -> dict:
-    y_pred  = model.predict(X_test)
+def compute_metrics(model, X_test, y_test, threshold: float = 0.5) -> dict:
     y_proba = model.predict_proba(X_test)[:, 1]
+    y_pred = (y_proba >= threshold).astype(int)
     return {
-        "accuracy":  round(accuracy_score(y_test, y_pred),  4),
-        "f1":        round(f1_score(y_test, y_pred),        4),
+        "accuracy": round(accuracy_score(y_test, y_pred), 4),
+        "f1": round(f1_score(y_test, y_pred), 4),
         "precision": round(precision_score(y_test, y_pred), 4),
-        "recall":    round(recall_score(y_test, y_pred),    4),
-        "roc_auc":   round(roc_auc_score(y_test, y_proba),  4),
+        "recall": round(recall_score(y_test, y_pred), 4),
+        "roc_auc": round(roc_auc_score(y_test, y_proba), 4),
     }
 
 
-def plot_confusion_matrix(model, X_test, y_test, model_name: str) -> None:
-    cm = confusion_matrix(y_test, model.predict(X_test))
+def plot_confusion_matrix(
+    model, X_test, y_test, model_name: str, threshold: float = 0.5
+) -> None:
+    y_proba = model.predict_proba(X_test)[:, 1]
+    y_pred = (y_proba >= threshold).astype(int)
+    cm = confusion_matrix(y_test, y_pred)
     fig, ax = plt.subplots(figsize=(5, 4))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax)
     ax.set_xlabel("Predicted")

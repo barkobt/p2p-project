@@ -4,6 +4,10 @@ data/processed/
 
 # Eğitilmiş model dosyaları
 models/*.pkl
+models/*.json
+models/*.csv
+mlruns/
+logs/
 
 # Python
 __pycache__/
@@ -24,6 +28,7 @@ env/
 
 # Raporlar (opsiyonel — grafikleri commit etmek istersen kaldır)
 reports/figures/
+reports/drift/
 
 # OS
 .DS_Store

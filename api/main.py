@@ -14,7 +14,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Telco Customer Churn API",
     description="Müşteri churn olasılığını tahmin eden REST API.",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 

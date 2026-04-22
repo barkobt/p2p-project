@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint
+        run: |
+          ruff check src api tests
+          black --check src api tests
+
+      - name: Unit tests
+        run: |
+          pytest tests/test_preprocess.py tests/test_train.py tests/test_drift.py -q
+
+      - name: API smoke tests
+        run: |
+          pytest tests/test_api.py -q
