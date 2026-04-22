@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import joblib
-import mlflow
 import numpy as np
 import optuna
 import pandas as pd
@@ -16,11 +15,10 @@ from sklearn.metrics import f1_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 from sklearn.svm import LinearSVC
 
-from src.config import TRAINING_CONFIG, config_as_dict
+from src.config import TRAINING_CONFIG
 from src.evaluate import compute_metrics, plot_confusion_matrix, plot_roc
 from src.utils import (
     DATA_DIR,
-    MLRUNS_DIR,
     MODEL_COMPARISON_PATH,
     MODEL_DIR,
     MODEL_METADATA_PATH,
@@ -409,69 +407,19 @@ def _acceptance_status(acceptance_checks: dict) -> str:
 
 
 def run_training() -> None:
-    run_base = (
-        f"run_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
-    )
-    pass_1 = _run_training_pass(run_id=f"{run_base}_run1", pass_name="run1")
-    fallback_needed = not pass_1["metadata"]["acceptance_checks"][
-        "min_f1_improvement_met"
-    ]
-    fallback_run_executed = False
-    selected = pass_1
-
-    if fallback_needed:
-        fallback_run_executed = True
-        log.warning(
-            "Run-1 minimum F1 iyileşmesini sağlayamadı. Genişletilmiş feature set ile Run-2 başlatılıyor."
-        )
-        from src.preprocess import run_preprocessing
-
-        run_preprocessing(include_extended_features=True)
-        pass_2 = _run_training_pass(run_id=f"{run_base}_run2", pass_name="run2")
-        selected = max(
-            [pass_1, pass_2],
-            key=lambda p: (
-                float(p["winner"]["cv_f1"]),
-                float(p["winner"]["cv_roc_auc"]),
-            ),
-        )
+    run_id = f"run_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
+    result = _run_training_pass(run_id=run_id, pass_name="run1")
 
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    comparison_df = selected["comparison_df"][COMPARISON_COLUMNS]
+    comparison_df = result["comparison_df"][COMPARISON_COLUMNS]
     comparison_df.to_csv(MODEL_COMPARISON_PATH, index=False)
-    joblib.dump(selected["model"], MODEL_DIR / "best_model.pkl")
-    joblib.dump(selected["preprocessor"], MODEL_DIR / "preprocessor.pkl")
+    joblib.dump(result["model"], MODEL_DIR / "best_model.pkl")
+    joblib.dump(result["preprocessor"], MODEL_DIR / "preprocessor.pkl")
 
-    metadata = dict(selected["metadata"])
-    metadata["fallback_run_executed"] = fallback_run_executed
+    metadata = dict(result["metadata"])
     metadata["acceptance_status"] = _acceptance_status(metadata["acceptance_checks"])
     with MODEL_METADATA_PATH.open("w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
-
-    MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
-    mlflow.set_tracking_uri(f"file:{MLRUNS_DIR}")
-    mlflow.set_experiment("telco-churn-local")
-    with mlflow.start_run(run_name=metadata["run_id"]):
-        mlflow.log_params(config_as_dict())
-        mlflow.log_param("model_name", metadata["model_name"])
-        mlflow.log_param("strategy", metadata["strategy"])
-        mlflow.log_param("selected_threshold", metadata["selected_threshold"])
-        mlflow.log_param("search_space_version", metadata["search_space_version"])
-        mlflow.log_param("fallback_run_executed", fallback_run_executed)
-        for k, v in metadata["params"].items():
-            mlflow.log_param(f"best_{k}", v)
-        mlflow.log_metric("cv_f1", float(metadata["cv_f1"]))
-        mlflow.log_metric("cv_f1_std", float(metadata["cv_f1_std"]))
-        mlflow.log_metric("cv_roc_auc", float(metadata["cv_roc_auc"]))
-        mlflow.log_metric("oof_f1_optimized", float(metadata["oof_f1_optimized"]))
-        mlflow.log_metric(
-            "improvement_vs_baseline_f1", float(metadata["improvement_vs_baseline_f1"])
-        )
-        mlflow.log_metric("test_f1", float(metadata["test_metrics"]["f1"]))
-        mlflow.log_metric("test_roc_auc", float(metadata["test_metrics"]["roc_auc"]))
-        mlflow.log_artifact(str(MODEL_COMPARISON_PATH))
-        mlflow.log_artifact(str(MODEL_METADATA_PATH))
-        mlflow.log_artifact(str(MODEL_DIR / "best_model.pkl"))
 
     print("\n=== Model Karşılaştırması ===")
     print(comparison_df.to_string(index=False))

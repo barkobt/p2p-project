@@ -10,7 +10,6 @@ REPORT_DIR = REPORTS_DIR / "figures"
 DRIFT_REPORT_DIR = REPORTS_DIR / "drift"
 MODEL_METADATA_PATH = MODEL_DIR / "model_metadata.json"
 MODEL_COMPARISON_PATH = MODEL_DIR / "model_comparison.csv"
-MLRUNS_DIR = ROOT_DIR / "mlruns"
 PREDICTION_LOG_DIR = ROOT_DIR / "logs" / "predictions"
 
 TARGET_COL = "Churn"
