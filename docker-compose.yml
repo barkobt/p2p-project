@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  churn-api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models   # yeni model .pkl dosyalarını yeniden build olmadan yükle
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

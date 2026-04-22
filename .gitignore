@@ -1,0 +1,30 @@
+# Ham veri — hiçbir zaman commit etme
+data/raw/
+data/processed/
+
+# Eğitilmiş model dosyaları
+models/*.pkl
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Ortam değişkenleri
+.env
+.env.*
+
+# Raporlar (opsiyonel — grafikleri commit etmek istersen kaldır)
+reports/figures/
+
+# OS
+.DS_Store
+Thumbs.db
