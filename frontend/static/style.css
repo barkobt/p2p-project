@@ -222,7 +222,6 @@ main {
 
 /* ── Arc Gauge ── */
 .arc-gauge {
-  position: relative;
   width: 220px;
   margin: 0 auto;
 }
@@ -246,18 +245,13 @@ main {
   transition: stroke-dashoffset .7s cubic-bezier(.4,0,.2,1), stroke .5s;
 }
 
-.gauge-label {
-  position: absolute;
-  bottom: -4px;
-  left: 50%;
-  transform: translateX(-50%);
+.prob-display {
   text-align: center;
-  line-height: 1;
-  white-space: nowrap;
+  margin-top: -8px;
 }
 
 .prob-number {
-  font-size: 3rem;
+  font-size: 3.2rem;
   font-weight: 300;
   letter-spacing: -.04em;
   display: block;
@@ -265,11 +259,11 @@ main {
 }
 
 .gauge-risk-text {
-  font-size: .72rem;
+  font-size: .7rem;
   color: var(--muted);
-  margin-top: 6px;
+  margin-top: 4px;
   display: block;
-  letter-spacing: .04em;
+  letter-spacing: .06em;
   text-transform: uppercase;
   font-weight: 500;
 }
