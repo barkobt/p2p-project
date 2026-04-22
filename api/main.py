@@ -38,6 +38,6 @@ app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="index.html")
 
 # Çalıştırmak için: uvicorn api.main:app --reload --port 8000
