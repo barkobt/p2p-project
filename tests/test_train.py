@@ -53,11 +53,11 @@ def test_build_estimator_smote_pipeline():
     assert "smote" in est.named_steps
 
 
-def test_linear_only_model_set():
-    assert "RandomForest" not in MODEL_NAMES
-    assert "XGBoost" not in MODEL_NAMES
-    assert "LightGBM" not in MODEL_NAMES
+def test_model_set_includes_gradient_boosting():
     assert "logreg_liblinear_l2" in MODEL_NAMES
+    assert "xgboost" in MODEL_NAMES
+    assert "lightgbm" in MODEL_NAMES
+    assert "RandomForest" not in MODEL_NAMES
 
 
 def test_acceptance_metrics_use_cv_f1_and_roc_auc_from_baseline():

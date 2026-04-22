@@ -9,11 +9,13 @@ import pandas as pd
 from imblearn.over_sampling import SMOTE
 from imblearn.pipeline import Pipeline as ImbPipeline
 from sklearn.base import clone
+from lightgbm import LGBMClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.metrics import f1_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 from sklearn.svm import LinearSVC
+from xgboost import XGBClassifier
 
 from src.config import TRAINING_CONFIG
 from src.evaluate import compute_metrics, plot_confusion_matrix, plot_roc
@@ -34,6 +36,8 @@ MODEL_NAMES = (
     "logreg_saga_elasticnet",
     "calibrated_sgd_logloss",
     "calibrated_linear_svc",
+    "xgboost",
+    "lightgbm",
 )
 COMPARISON_COLUMNS = [
     "model",
@@ -117,6 +121,33 @@ def _base_estimator(
         )
         return CalibratedClassifierCV(estimator=base, method="sigmoid", cv=3)
 
+    if model_name == "xgboost":
+        scale_pos_weight = pos_weight if strategy == "class_weight" else 1.0
+        return XGBClassifier(
+            n_estimators=int(params.get("n_estimators", 300)),
+            max_depth=int(params.get("max_depth", 6)),
+            learning_rate=float(params.get("learning_rate", 0.05)),
+            subsample=float(params.get("subsample", 0.8)),
+            colsample_bytree=float(params.get("colsample_bytree", 0.8)),
+            scale_pos_weight=scale_pos_weight,
+            eval_metric="logloss",
+            random_state=seed,
+            verbosity=0,
+        )
+
+    if model_name == "lightgbm":
+        return LGBMClassifier(
+            n_estimators=int(params.get("n_estimators", 300)),
+            max_depth=int(params.get("max_depth", -1)),
+            learning_rate=float(params.get("learning_rate", 0.05)),
+            num_leaves=int(params.get("num_leaves", 31)),
+            subsample=float(params.get("subsample", 0.8)),
+            colsample_bytree=float(params.get("colsample_bytree", 0.8)),
+            class_weight="balanced" if strategy == "class_weight" else None,
+            random_state=seed,
+            verbose=-1,
+        )
+
     raise ValueError(f"Desteklenmeyen model: {model_name}")
 
 
@@ -194,6 +225,22 @@ def _suggest_params(trial: optuna.Trial, model_name: str) -> dict:
     if model_name == "calibrated_linear_svc":
         return {
             "C": trial.suggest_float("C", 1e-3, 20.0, log=True),
+        }
+    if model_name == "xgboost":
+        return {
+            "n_estimators":     trial.suggest_int("n_estimators", 100, 600),
+            "max_depth":        trial.suggest_int("max_depth", 3, 10),
+            "learning_rate":    trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+            "subsample":        trial.suggest_float("subsample", 0.5, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
+        }
+    if model_name == "lightgbm":
+        return {
+            "n_estimators":     trial.suggest_int("n_estimators", 100, 600),
+            "num_leaves":       trial.suggest_int("num_leaves", 20, 150),
+            "learning_rate":    trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+            "subsample":        trial.suggest_float("subsample", 0.5, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
         }
     raise ValueError(f"Desteklenmeyen model: {model_name}")
 
