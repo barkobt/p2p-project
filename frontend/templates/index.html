@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Churn Predictor</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+    </svg>
+    Churn Predictor
+  </div>
+  <div class="status-badge">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-label">Kontrol ediliyor…</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Sol: Form -->
+  <div class="card">
+    <div class="card-title">Müşteri Bilgileri</div>
+
+    <form id="predict-form" autocomplete="off">
+
+      <div class="form-group-label">Demografik</div>
+      <div class="fields-grid">
+        <div class="field">
+          <label for="gender">Cinsiyet</label>
+          <select id="gender" name="gender">
+            <option>Male</option>
+            <option>Female</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="SeniorCitizen">Yaşlı Müşteri</label>
+          <select id="SeniorCitizen" name="SeniorCitizen">
+            <option value="0">Hayır (0)</option>
+            <option value="1">Evet (1)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="Partner">Eş/Partner</label>
+          <select id="Partner" name="Partner">
+            <option>Yes</option>
+            <option>No</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="Dependents">Bakmakla Yükümlü</label>
+          <select id="Dependents" name="Dependents">
+            <option>No</option>
+            <option>Yes</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="tenure">Müşteri Süresi (ay)</label>
+          <input type="number" id="tenure" name="tenure" value="12" min="0" />
+        </div>
+      </div>
+
+      <div class="form-group-label">Hizmetler</div>
+      <div class="fields-grid">
+        <div class="field">
+          <label for="PhoneService">Telefon Hizmeti</label>
+          <select id="PhoneService" name="PhoneService">
+            <option>Yes</option>
+            <option>No</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="MultipleLines">Çoklu Hat</label>
+          <select id="MultipleLines" name="MultipleLines">
+            <option>No</option>
+            <option>Yes</option>
+            <option>No phone service</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="InternetService">İnternet Hizmeti</label>
+          <select id="InternetService" name="InternetService">
+            <option>Fiber optic</option>
+            <option>DSL</option>
+            <option>No</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="OnlineSecurity">Çevrimiçi Güvenlik</label>
+          <select id="OnlineSecurity" name="OnlineSecurity">
+            <option>No</option>
+            <option>Yes</option>
+            <option>No internet service</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="OnlineBackup">Çevrimiçi Yedek</label>
+          <select id="OnlineBackup" name="OnlineBackup">
+            <option>No</option>
+            <option>Yes</option>
+            <option>No internet service</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="DeviceProtection">Cihaz Koruma</label>
+          <select id="DeviceProtection" name="DeviceProtection">
+            <option>No</option>
+            <option>Yes</option>
+            <option>No internet service</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="TechSupport">Teknik Destek</label>
+          <select id="TechSupport" name="TechSupport">
+            <option>No</option>
+            <option>Yes</option>
+            <option>No internet service</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="StreamingTV">TV Yayını</label>
+          <select id="StreamingTV" name="StreamingTV">
+            <option>Yes</option>
+            <option>No</option>
+            <option>No internet service</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="StreamingMovies">Film Yayını</label>
+          <select id="StreamingMovies" name="StreamingMovies">
+            <option>Yes</option>
+            <option>No</option>
+            <option>No internet service</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group-label">Sözleşme &amp; Ödeme</div>
+      <div class="fields-grid">
+        <div class="field">
+          <label for="Contract">Sözleşme Tipi</label>
+          <select id="Contract" name="Contract">
+            <option>Month-to-month</option>
+            <option>One year</option>
+            <option>Two year</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="PaperlessBilling">Kağıtsız Fatura</label>
+          <select id="PaperlessBilling" name="PaperlessBilling">
+            <option>Yes</option>
+            <option>No</option>
+          </select>
+        </div>
+        <div class="field" style="grid-column: span 2">
+          <label for="PaymentMethod">Ödeme Yöntemi</label>
+          <select id="PaymentMethod" name="PaymentMethod">
+            <option>Electronic check</option>
+            <option>Mailed check</option>
+            <option>Bank transfer (automatic)</option>
+            <option>Credit card (automatic)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group-label">Finansal</div>
+      <div class="fields-grid">
+        <div class="field">
+          <label for="MonthlyCharges">Aylık Ücret ($)</label>
+          <input type="number" id="MonthlyCharges" name="MonthlyCharges" value="85.5" step="0.01" min="0.01" />
+        </div>
+        <div class="field">
+          <label for="TotalCharges">Toplam Ücret ($)</label>
+          <input type="number" id="TotalCharges" name="TotalCharges" value="1020.0" step="0.01" min="0" />
+        </div>
+      </div>
+
+      <button type="submit" class="btn-predict" id="predict-btn">
+        <div class="spinner" id="spinner"></div>
+        Tahmin Et
+      </button>
+
+    </form>
+  </div>
+
+  <!-- Sağ: Sonuç -->
+  <div class="card">
+    <div class="card-title">Tahmin Sonucu</div>
+
+    <div class="result-panel">
+
+      <div class="result-placeholder" id="result-placeholder">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+        </svg>
+        <p>Müşteri bilgilerini doldurun<br/>ve "Tahmin Et" butonuna basın.</p>
+      </div>
+
+      <div class="result-content" id="result-content">
+        <div class="prob-number" id="prob-number">—</div>
+
+        <div class="gauge-wrap">
+          <div class="gauge-track">
+            <div class="gauge-fill" id="gauge-fill" style="--pct: 0%"></div>
+          </div>
+          <div class="gauge-labels">
+            <span>Düşük Risk</span>
+            <span>Yüksek Risk</span>
+          </div>
+        </div>
+
+        <div class="verdict" id="verdict"></div>
+        <div class="meta-info" id="meta-info"></div>
+      </div>
+
+      <div class="error-msg" id="error-msg"></div>
+
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  Telco Customer Churn Predictor &mdash; FastAPI + scikit-learn &mdash;
+  <a href="/docs" style="color:var(--accent);text-decoration:none">Swagger API Docs</a>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

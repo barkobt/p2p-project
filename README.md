@@ -1,6 +1,7 @@
-# Telco Customer Churn — ML + REST API
+# Telco Customer Churn — ML + Web Servisi
 
-Telekom müşterilerinin hizmeti bırakıp bırakmayacağını tahmin eden uçtan uca makine öğrenmesi sistemi. Veri ön işlemeden model eğitimine, HTTP API servisinden Docker dağıtımına kadar eksiksiz bir pipeline içerir.
+Telekom müşterilerinin hizmeti bırakıp bırakmayacağını tahmin eden uçtan uca sistem.
+Veri ön işleme → model eğitimi → REST API → web arayüzü tek pakette.
 
 ---
 
@@ -10,33 +11,35 @@ Telekom müşterilerinin hizmeti bırakıp bırakmayacağını tahmin eden uçta
 - [Veri Seti](#veri-seti)
 - [Kurulum](#kurulum)
 - [Pipeline Çalıştırma](#pipeline-çalıştırma)
-- [API Kullanımı](#api-kullanımı)
-- [Model Karşılaştırması](#model-karşılaştırması)
-- [Docker](#docker)
+- [Web Arayüzü ve API](#web-arayüzü-ve-api)
+- [Web'den Erişim (Başkaları da Erişebilsin)](#webden-erişim)
+- [Docker ile Çalıştırma](#docker-ile-çalıştırma)
 - [Testler](#testler)
 - [Proje Yapısı](#proje-yapısı)
+- [Model Karşılaştırması](#model-karşılaştırması)
 - [Yol Haritası](#yol-haritası)
 
 ---
 
 ## Proje Hakkında
 
-Bu proje, bir telekom şirketinin müşteri verilerini kullanarak hangi müşterilerin hizmeti bırakabileceğini (churn) tahmin eder. Sistem üç ana katmandan oluşur:
+Sistem üç ana katmandan oluşur:
 
-- **Veri Katmanı:** Ham CSV → temizleme → eğitim/test bölme
-- **Model Katmanı:** Linear model ailesi ile CV + Optuna tuning ve otomatik en iyi model seçimi
-- **Servis Katmanı:** FastAPI tabanlı REST API, `/predict` endpoint'i üzerinden gerçek zamanlı tahmin
+| Katman | Ne yapar |
+|--------|---------|
+| **ML Pipeline** (`src/`) | Ham CSV'yi işler, 4 model × 3 strateji × Optuna tuning ile eğitir |
+| **API** (`api/`) | FastAPI; tek tahmin, toplu tahmin, sağlık endpoint'leri |
+| **Web Arayüzü** (`frontend/`) | Aynı porttan servis edilen sade, koyu temalı tahmin formu |
 
 ### Teknik Stack
 
-| Katman | Teknoloji |
-|--------|-----------|
-| ML Pipeline | scikit-learn, imbalanced-learn, Optuna |
-| API | FastAPI + Uvicorn |
-| Veri İşleme | pandas, numpy |
-| Serileştirme | joblib |
-| Test | pytest + httpx |
-| Konteyner | Docker + Docker Compose |
+| | |
+|---|---|
+| ML | scikit-learn, imbalanced-learn (SMOTE), Optuna |
+| API & UI | FastAPI, Uvicorn, Jinja2 |
+| Veri | pandas, numpy |
+| Test | pytest (20 test, veri dosyası gerektirmez) |
+| Konteyner | Docker (opsiyonel) |
 
 ---
 
@@ -44,14 +47,12 @@ Bu proje, bir telekom şirketinin müşteri verilerini kullanarak hangi müşter
 
 [Kaggle — Telco Customer Churn](https://www.kaggle.com/datasets/blastchar/telco-customer-churn)
 
-IBM örnek verisi olan bu set, 7043 müşterinin demografik, hizmet ve sözleşme bilgilerini içerir. Hedef değişken `Churn`, müşterinin son ay içinde hizmeti bırakıp bırakmadığını gösterir.
+7 043 müşteri kaydı. Hedef: `Churn` (son ay hizmeti bırakma).
 
-**Önemli Veri Notları:**
-- `TotalCharges` sütunu yeni müşterilerde (tenure=0) boşluk içerir → `NaN` olarak işlenir, medyan ile doldurulur
-- `SeniorCitizen` 0/1 integer formatındadır, diğer kategorikler "Yes"/"No" string'idir
-- Sınıf dengesizliği mevcuttur (~26% churn, ~74% non-churn)
-
-CSV dosyasını indirip şu konuma yerleştir:
+**Önemli notlar:**
+- `TotalCharges` — yeni müşterilerde boşluk → `NaN` → medyan ile doldurulur
+- `SeniorCitizen` — `0/1` integer (diğer kolonlar `"Yes"/"No"` string)
+- Sınıf dengesizliği: ~%26 churn / ~%74 non-churn → SMOTE + ağırlıklı eğitim ile giderilir
 
 ```
 data/raw/WA_Fn-UseC_-Telco-Customer-Churn.csv
@@ -61,14 +62,15 @@ data/raw/WA_Fn-UseC_-Telco-Customer-Churn.csv
 
 ## Kurulum
 
-Python 3.11+ önerilir.
+Python **3.11+** önerilir.
 
 ```bash
-# Sanal ortam oluştur
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+git clone https://github.com/barkobt/p2p-project.git
+cd p2p-project
 
-# Bağımlılıkları kur
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+
 pip install -r requirements.txt
 ```
 
@@ -76,94 +78,84 @@ pip install -r requirements.txt
 
 ## Pipeline Çalıştırma
 
-Adımlar sırasıyla çalıştırılmalıdır; her adım bir sonrakinin girişini üretir.
+> Adımlar **sırasıyla** çalıştırılmalı; her adım bir sonrakinin girişini üretir.
 
-```bash
-# Adım 1 — Veri ön işleme
-# Çıktı: models/preprocessor.pkl, data/processed/train.csv, data/processed/test.csv
-python -m src.preprocess
-
-# Adım 2 — Model eğitimi ve karşılaştırma
-# Çıktı:
-#   models/best_model.pkl
-#   models/model_metadata.json
-#   models/model_comparison.csv
-#   reports/figures/*.png
-python -m src.train
-
-# Adım 3 — API servisi
-uvicorn api.main:app --reload --port 8000
-```
-
-Tek komutla local pipeline:
+### Hızlı başlangıç (tek komut)
 
 ```bash
 python -m src.pipeline
-# veya
-bash scripts/run_local_pipeline.sh
+# Sırasıyla preprocess → train çalıştırır
 ```
 
-### Keşifsel Veri Analizi (EDA)
+### Adım adım
+
+```bash
+# 1. Veri ön işleme
+#    Çıktı: models/preprocessor.pkl
+#           data/processed/train.csv
+#           data/processed/test.csv
+python -m src.preprocess
+
+# 2. Model eğitimi
+#    Çıktı: models/best_model.pkl
+#           models/model_metadata.json   (eşik, metrikler, model adı)
+#           models/model_comparison.csv  (tüm aday karşılaştırması)
+#           reports/figures/             (ROC + confusion matrix grafikleri)
+python -m src.train
+
+# 3. Servisi başlat
+uvicorn api.main:app --reload --port 8000
+```
+
+### EDA Notebook
 
 ```bash
 jupyter notebook notebooks/01_eda.ipynb
 ```
 
-EDA notebook'u churn dağılımı, sayısal değişken histogramları, kategorik değişkenler bazında churn oranları ve korelasyon matrisini otomatik olarak `reports/figures/` klasörüne kaydeder.
+### Drift Kontrolü (opsiyonel)
 
-### Drift Kontrolü (PSI)
-
-Prediction logları oluştuktan sonra:
+Tahmin logları biriktikten sonra:
 
 ```bash
 python -m src.drift
+# → reports/drift/drift_report_<tarih>.json
 ```
-
-Çıktı `reports/drift/` klasörüne JSON raporu olarak yazılır.
 
 ---
 
-## API Kullanımı
+## Web Arayüzü ve API
 
-API başlatıldıktan sonra interactive dokümantasyon için: **http://localhost:8000/docs**
+Servis başladıktan sonra aynı port üzerinden her şeye erişilir:
 
-### Endpoint'ler
+| URL | Ne |
+|-----|----|
+| `http://localhost:8000/` | **Web Arayüzü** — tahmin formu |
+| `http://localhost:8000/docs` | Swagger / interaktif API dökümantasyonu |
+| `http://localhost:8000/health` | Servis sağlığı |
+| `POST /api/v1/predict` | Tek müşteri tahmini |
+| `POST /api/v1/predict/batch` | Toplu tahmin (max 500 müşteri) |
 
-| Method | Endpoint | Açıklama |
-|--------|----------|----------|
-| `GET` | `/health` | Servis sağlığı ve model yüklü olup olmadığını döner |
-| `POST` | `/api/v1/predict` | Müşteri bilgilerini alır, churn olasılığı döner |
-| `POST` | `/api/v1/predict/batch` | Tek istekte en fazla 500 müşteri için tahmin döner |
+### POST `/api/v1/predict` — Örnek İstek
 
-### POST `/api/v1/predict`
-
-**İstek Gövdesi:**
-
-```json
-{
-  "gender": "Female",
-  "SeniorCitizen": 0,
-  "Partner": "Yes",
-  "Dependents": "No",
-  "tenure": 12,
-  "PhoneService": "Yes",
-  "MultipleLines": "No",
-  "InternetService": "Fiber optic",
-  "OnlineSecurity": "No",
-  "OnlineBackup": "No",
-  "DeviceProtection": "No",
-  "TechSupport": "No",
-  "StreamingTV": "Yes",
-  "StreamingMovies": "Yes",
-  "Contract": "Month-to-month",
-  "PaperlessBilling": "Yes",
-  "PaymentMethod": "Electronic check",
-  "MonthlyCharges": 85.5,
-  "TotalCharges": 1020.0
-}
+```bash
+curl -X POST http://localhost:8000/api/v1/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "gender": "Female", "SeniorCitizen": 0,
+    "Partner": "Yes", "Dependents": "No",
+    "tenure": 12, "PhoneService": "Yes",
+    "MultipleLines": "No", "InternetService": "Fiber optic",
+    "OnlineSecurity": "No", "OnlineBackup": "No",
+    "DeviceProtection": "No", "TechSupport": "No",
+    "StreamingTV": "Yes", "StreamingMovies": "Yes",
+    "Contract": "Month-to-month", "PaperlessBilling": "Yes",
+    "PaymentMethod": "Electronic check",
+    "MonthlyCharges": 85.5, "TotalCharges": 1020.0
+  }'
 ```
 
-**Yanıt:**
+### Örnek Yanıt
 
 ```json
 {
@@ -173,89 +165,116 @@ API başlatıldıktan sonra interactive dokümantasyon için: **http://localhost
 }
 ```
 
-`threshold_used`, eğitim sırasında validation üzerinde optimize edilip `models/model_metadata.json` içine yazılan değerdir.
+`threshold_used` — eğitim sırasında F1 optimizasyonu ile bulunan değer, her yanıtta döner.
 
-**Alan Açıklamaları:**
+---
 
-| Alan | Tip | Kabul Edilen Değerler |
-|------|-----|----------------------|
-| `gender` | string | `"Male"`, `"Female"` |
-| `SeniorCitizen` | int | `0`, `1` |
-| `Partner`, `Dependents`, `PhoneService`, `PaperlessBilling` | string | `"Yes"`, `"No"` |
-| `MultipleLines` | string | `"Yes"`, `"No"`, `"No phone service"` |
-| `InternetService` | string | `"DSL"`, `"Fiber optic"`, `"No"` |
-| `OnlineSecurity`, `OnlineBackup`, `DeviceProtection`, `TechSupport`, `StreamingTV`, `StreamingMovies` | string | `"Yes"`, `"No"`, `"No internet service"` |
-| `Contract` | string | `"Month-to-month"`, `"One year"`, `"Two year"` |
-| `PaymentMethod` | string | `"Electronic check"`, `"Mailed check"`, `"Bank transfer (automatic)"`, `"Credit card (automatic)"` |
-| `MonthlyCharges` | float | > 0 |
-| `TotalCharges` | float | ≥ 0 |
+## Web'den Erişim
 
-### cURL Örneği
+> **Soru: Başkaları da bu servise erişebilir mi?**
+> Evet — aşağıdaki yöntemlerden biri ile.
+
+---
+
+### Seçenek A — Geçici Paylaşım: ngrok *(sunum/demo için)*
+
+Kendi bilgisayarınızdan çalışırken herkese açık geçici URL alırsınız.
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/predict \
-  -H "Content-Type: application/json" \
-  -d @- << 'EOF'
-{
-  "gender": "Female", "SeniorCitizen": 0, "Partner": "Yes",
-  "Dependents": "No", "tenure": 12, "PhoneService": "Yes",
-  "MultipleLines": "No", "InternetService": "Fiber optic",
-  "OnlineSecurity": "No", "OnlineBackup": "No",
-  "DeviceProtection": "No", "TechSupport": "No",
-  "StreamingTV": "Yes", "StreamingMovies": "Yes",
-  "Contract": "Month-to-month", "PaperlessBilling": "Yes",
-  "PaymentMethod": "Electronic check",
-  "MonthlyCharges": 85.5, "TotalCharges": 1020.0
-}
-EOF
+# ngrok kurulumu: https://ngrok.com/download
+# Kurulumdan sonra:
+
+uvicorn api.main:app --port 8000 &   # API'yi arka planda başlat
+ngrok http 8000                       # Genel URL oluştur
+```
+
+Çıktı şöyle görünür:
+
+```
+Forwarding  https://abc123.ngrok-free.app  →  http://localhost:8000
+```
+
+`https://abc123.ngrok-free.app` adresini istediğiniz kişiyle paylaşın.
+ngrok penceresi açık kaldığı sürece erişim aktif olur.
+
+---
+
+### Seçenek B — Kalıcı Deployment: Railway *(ücretsiz, önerilen)*
+
+GitHub'a push edilen kod otomatik deploy olur.
+
+**Adımlar:**
+
+```
+1. railway.app → "New Project" → "Deploy from GitHub repo"
+2. barkobt/p2p-project reposunu seç
+3. Settings → Start Command:
+      uvicorn api.main:app --host 0.0.0.0 --port $PORT
+4. "Deploy" tıkla → ~2-3 dakika sonra URL hazır
+   Örnek: https://p2p-project-production.up.railway.app
+```
+
+**⚠️ Önemli — Model dosyaları:**
+`models/*.pkl` ve `models/*.json` gitignore'da, bu yüzden Railway'de model bulunamaz.
+Çözüm: Deployment öncesinde `.gitignore`'dan şu satırı kaldır, model dosyalarını commit et:
+
+```
+# Bu satırı sil veya yorum yap:
+# models/*.pkl
+```
+
+```bash
+python -m src.pipeline          # modelleri train et
+git add models/                 # commit'e ekle
+git commit -m "chore: add trained model artifacts"
+git push                        # Railway otomatik redeploy yapar
 ```
 
 ---
 
-## Model Karşılaştırması
-
-`python -m src.train` akışı:
-
-- Stratified 5-fold CV ile model/strateji karşılaştırması yapar
-- Linear family adayları için `baseline`, `class_weight`, `smote` stratejilerini dener
-- İlk 2 adayı Optuna ile (`60 trial`) tune eder
-- Out-of-fold olasılıklardan en iyi F1 threshold'unu seçer
-- Sonuçları `models/model_comparison.csv` dosyasına yazar
-
-Confusion matrix ve ROC eğrisi grafikleri otomatik olarak `reports/figures/` klasörüne kaydedilir.
-
----
-
-## Docker
-
-Modeller eğitildikten sonra Docker ile çalıştırılabilir. `models/` klasörü build sırasında imaja kopyalanır.
+### Seçenek C — Docker ile (VPS / Render.com)
 
 ```bash
 # Önce modelleri eğit
 python -m src.pipeline
 
-# Image oluştur ve başlat
-docker compose up --build
-
-# Arka planda çalıştırmak için
-docker compose up -d --build
+# Docker image oluştur ve çalıştır
+docker build -t churn-api .
+docker run -p 8000:8000 churn-api
+# → http://localhost:8000
 ```
 
-Servis `http://localhost:8000` adresinde erişilebilir olur.
+**Render.com deployment:**
+
+```
+render.com → "New Web Service" → GitHub repoyu seç
+Environment: Docker
+Deploy → URL otomatik atanır
+```
+
+---
+
+## Docker ile Çalıştırma
+
+```bash
+python -m src.pipeline          # önce model eğit
+docker build -t churn-api .
+docker run -p 8000:8000 churn-api
+```
 
 ---
 
 ## Testler
 
+Tüm testler veri dosyası **gerektirmez** (monkeypatch ile izole edilmiştir).
+
 ```bash
-# Tüm testler
-pytest tests/ -v
+pytest tests/ -v                  # 20 test, hepsi çalışır
 
-# Unit testler
-pytest tests/test_preprocess.py tests/test_train.py tests/test_drift.py -v
-
-# API smoke testleri
-pytest tests/test_api.py -v
+pytest tests/test_api.py -v       # API + batch + startup failure
+pytest tests/test_preprocess.py   # Feature engineering, preprocessor
+pytest tests/test_train.py        # Metrikler, eşik optimizasyonu, SMOTE
+pytest tests/test_drift.py        # PSI hesaplama
 ```
 
 ---
@@ -266,52 +285,74 @@ pytest tests/test_api.py -v
 p2p-project/
 │
 ├── data/
-│   ├── raw/                    ← Kaggle CSV buraya (gitignore'd)
-│   └── processed/              ← train.csv, test.csv (preprocess sonrası üretilir)
-│
-├── notebooks/
-│   └── 01_eda.ipynb            ← Keşifsel veri analizi
+│   ├── raw/                  ← Kaggle CSV (gitignore'd)
+│   └── processed/            ← train.csv, test.csv (pipeline çıktısı)
 │
 ├── src/
-│   ├── utils.py                ← Path sabitleri (ROOT_DIR, DATA_DIR, MODEL_DIR), logger
-│   ├── features.py             ← Ortak feature engineering dönüşümleri
-│   ├── preprocess.py           ← ColumnTransformer pipeline + veri bölme
-│   ├── train.py                ← CV + dengesizlik stratejileri + Optuna + artefakt üretimi
-│   ├── pipeline.py             ← Tek komutluk preprocess + train akışı
-│   ├── drift.py                ← Prediction logları üzerinden PSI drift raporu
-│   └── evaluate.py             ← compute_metrics, plot_roc, plot_confusion_matrix
+│   ├── config.py             ← Eğitim hiperparametreleri (TrainingConfig dataclass)
+│   ├── features.py           ← Feature engineering (ContractMonths, ChargePerTenure, ...)
+│   ├── preprocess.py         ← ColumnTransformer pipeline + veri bölme
+│   ├── train.py              ← 4 model × 3 strateji, Optuna tuning, en iyi modeli seç
+│   ├── evaluate.py           ← compute_metrics, ROC/CM grafikleri
+│   ├── pipeline.py           ← preprocess + train tek komutla
+│   ├── drift.py              ← PSI tabanlı veri kayması raporu (opsiyonel)
+│   └── utils.py              ← Path sabitleri, logger, append_jsonl
 │
 ├── api/
-│   ├── main.py                 ← FastAPI app + lifespan (model yükleme)
-│   ├── schemas.py              ← CustomerFeatures + batch request/response şemaları
+│   ├── main.py               ← FastAPI app, CORS, Jinja2, static mount
+│   ├── schemas.py            ← CustomerFeatures, PredictionResponse, Batch...
 │   └── routes/
-│       ├── predict.py          ← /predict ve /predict/batch + JSONL prediction logging
-│       └── health.py           ← GET /health
+│       ├── predict.py        ← POST /api/v1/predict  ve  /predict/batch
+│       └── health.py         ← GET /health
 │
-├── models/                     ← best_model.pkl, preprocessor.pkl, model_metadata.json, model_comparison.csv
-├── tests/                      ← pytest testleri
-├── reports/figures/            ← Otomatik kaydedilen grafikler
-├── reports/drift/              ← Drift raporları
-├── logs/predictions/           ← Günlük JSONL prediction logları
-├── mlruns/                     ← MLflow local file store
+├── frontend/
+│   ├── templates/
+│   │   └── index.html        ← Tek sayfa, koyu temalı tahmin formu
+│   └── static/
+│       ├── style.css         ← CSS custom properties, dark theme
+│       └── app.js            ← Vanilla JS, fetch → sonuç paneli
 │
+├── models/                   ← .pkl + .json (gitignore'd, pipeline üretir)
+├── notebooks/
+│   └── 01_eda.ipynb
+├── tests/                    ← 20 pytest testi
+├── reports/figures/          ← Grafik çıktıları
 ├── requirements.txt
 ├── Dockerfile
-├── docker-compose.yml
-└── CLAUDE.md                   ← Claude Code için kılavuz
+└── CLAUDE.md
 ```
+
+---
+
+## Model Karşılaştırması
+
+`python -m src.train` çıktısı eğitim sonrasında doldurulacak.
+
+Eğitim süreci:
+1. 4 model × 3 strateji (baseline, class_weight, SMOTE) = 12 aday, 5-katlı CV
+2. En iyi 2 aday Optuna ile (60 deneme) tune edilir
+3. OOF olasılıklarından en iyi F1 eşiği seçilir
+4. Sonuçlar `models/model_comparison.csv`'ye yazılır
+
+| Model | Strateji | CV F1 | CV ROC-AUC | Eşik |
+|-------|----------|-------|------------|------|
+| — | — | — | — | — |
+
+> Eğitim tamamlandıktan sonra `models/model_comparison.csv` veya terminal çıktısından doldur.
 
 ---
 
 ## Yol Haritası
 
-Projenin ilerleyen versiyonlarında planlanıyor:
-
-- [x] **SMOTE / sınıf ağırlığı** — sınıf dengesizliği için karşılaştırmalı strateji
-- [x] **Hiperparametre optimizasyonu** — Optuna ile otomatik tuning
-- [ ] **Feature importance görselleştirme** — SHAP değerleri ile model yorumlanabilirliği
-- [x] **Batch predict endpoint** — tek seferde çok sayıda müşteri tahmini (`POST /api/v1/predict/batch`)
-- [x] **Model versiyonlama** — MLflow local store ile deney takibi
-- [ ] **Streamlit arayüzü** — sürükle-bırak CSV yükleme ve tahmin dashboard'u
-- [x] **CI/CD** — GitHub Actions ile lint + unit + API smoke test
-- [x] **Monitoring** — prediction logları ve PSI tabanlı drift raporu
+- [x] Veri ön işleme pipeline'ı
+- [x] Feature engineering (ContractMonths, ChargePerTenure, ServiceCount, HasFamily)
+- [x] Çoklu model eğitimi + Optuna tuning
+- [x] SMOTE ile sınıf dengesizliği giderme
+- [x] FastAPI REST servisi (tek + toplu tahmin)
+- [x] Metadata-tabanlı dinamik threshold
+- [x] Prediction logging
+- [x] Web arayüzü (koyu tema, probability gauge)
+- [x] CORS — dış erişime açık
+- [x] PSI tabanlı drift detection
+- [ ] SHAP değerleri ile model yorumlanabilirliği
+- [ ] CI/CD (GitHub Actions — push'ta otomatik test)
